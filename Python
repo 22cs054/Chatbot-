@@ -1,0 +1,60 @@
+from flask import Flask, render_template, request, jsonify
+import mysql.connector
+from transformers import pipeline
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Connect to MySQL database
+db = mysql.connector.connect(
+    host="your_host",
+    user="your_user",
+    password="your_password",
+    database="your_database"
+)
+cursor = db.cursor()
+
+# Create table if not exists
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_message TEXT,
+    bot_response TEXT
+)
+""")
+db.commit()
+
+# Load AI model for chatbot
+chatbot = pipeline("conversational", model="microsoft/DialoGPT-medium")
+
+# Home Route
+@app.route('/')
+def home():
+    return render_template("index.html")
+
+# Chat Route
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.json.get("message")
+    if not user_input:
+        return jsonify({"response": "Please enter a message."})
+
+    # AI Response
+    response = chatbot(user_input)[0]['generated_text']
+
+    # Save Chat History
+    cursor.execute("INSERT INTO chat_history (user_message, bot_response) VALUES (%s, %s)", (user_input, response))
+    db.commit()
+
+    return jsonify({"response": response})
+
+# Fetch Chat History
+@app.route('/history', methods=['GET'])
+def history():
+    cursor.execute("SELECT user_message, bot_response FROM chat_history")
+    history = cursor.fetchall()
+    return jsonify({"history": history})
+
+# Run the app
+if __name__ == '__main__':
+    app.run(debug=True)
